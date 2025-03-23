@@ -82,8 +82,9 @@ function updateModal() {
                     <div class="vehicle-info">
                         <div class="info-header">
                             <h4 class="mb-0">${model.manufacturer_name} ${model.name}</h4>
-                            <button class="btn btn-warning btn-sm btn-sold" onclick="toggleSoldStatus(${model.id})">
-                                <i class="fas fa-check-circle"></i> Mark as Sold
+                            <button class="btn ${model.is_sold ? 'btn-success' : 'btn-warning'} btn-sm" onclick="toggleSoldStatus(${model.id}, event)">
+                                <i class="fas ${model.is_sold ? 'fa-undo' : 'fa-check-circle'} me-1"></i>
+                                ${model.is_sold ? 'Purchase' : 'Mark as Sold'}
                             </button>
                         </div>
                         
@@ -105,6 +106,7 @@ function updateModal() {
                                 <span class="status-badge ${model.is_sold ? 'sold' : 'available'}">
                                     ${model.is_sold ? 'Sold' : 'Available'}
                                 </span>
+                                
                             </div>
                         </div>
 
@@ -153,25 +155,32 @@ function updateModal() {
     $('#carouselModelInner').html(modelsHtml);
     $('.carousel-indicators').html(indicatorsHtml);
 
-    // Initialize or update carousel
-    if (!modelCarousel) {
-        modelCarousel = new bootstrap.Carousel(document.getElementById('modelCarousel'), {
-            interval: false,
-            wrap: false
-        });
-    } else {
-        modelCarousel.to(0);
+    // Destroy existing carousel if it exists
+    if (modelCarousel) {
+        modelCarousel.dispose();
+        modelCarousel = null;
     }
+
+    // Initialize new carousel
+    modelCarousel = new bootstrap.Carousel(document.getElementById('modelCarousel'), {
+        interval: false,
+        wrap: false,
+        keyboard: true,
+        
+    });
+
+    // Force the first slide to be active
+    modelCarousel.to(0);
 }
 
-function toggleSoldStatus(modelId) {
+function toggleSoldStatus(modelId, event) {
     const button = event.currentTarget;
-    const currentStatus = button.closest('.carousel-item').querySelector('.status-badge').classList.contains('sold');
+    const carouselItem = button.closest('.carousel-item');
+    const currentStatus = carouselItem.querySelector('.status-badge').classList.contains('sold');
     const newStatus = !currentStatus;
     
     // Disable button and show loading state
     button.disabled = true;
-    const originalText = button.innerHTML;
     button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
 
     $.ajax({
@@ -183,18 +192,42 @@ function toggleSoldStatus(modelId) {
         },
         success: function(response) {
             if (response.success) {
+                // Update the model data in currentModels array
+                const modelIndex = currentModels.findIndex(m => m.id === modelId);
+                if (modelIndex !== -1) {
+                    currentModels[modelIndex].is_sold = newStatus;
+                }
+
                 // Update the status badge
-                const statusBadge = button.closest('.carousel-item').querySelector('.status-badge');
+                const statusBadge = carouselItem.querySelector('.status-badge');
                 statusBadge.className = `status-badge ${newStatus ? 'sold' : 'available'}`;
                 statusBadge.textContent = newStatus ? 'Sold' : 'Available';
                 
-                // Update button text
-                button.innerHTML = newStatus ? 
-                    '<i class="fas fa-undo me-1"></i>Mark as Available' : 
-                    '<i class="fas fa-check-circle me-1"></i>Mark as Sold';
+                // Update button text and class
+                button.className = `btn ${newStatus ? 'btn-success' : 'btn-warning'} btn-sm`;
+                button.innerHTML = `<i class="fas ${newStatus ? 'fa-undo' : 'fa-check-circle'} me-1"></i>${newStatus ? 'Purchase' : 'Mark as Sold'}`;
                 
-                // Refresh the inventory table
-                loadInventory();
+                // Update the available count in the inventory table
+                const modelName = carouselItem.querySelector('h4').textContent.split(' ').slice(1).join(' ');
+                const row = $(`#inventoryTableBody tr:contains('${modelName}')`);
+                const countBadge = row.find('.badge');
+                const currentCount = parseInt(countBadge.text());
+                countBadge.text(newStatus ? currentCount - 1 : currentCount + 1);
+
+                // Update the carousel display without re-rendering the current slide
+                const currentSlide = carouselItem;
+                const currentSlideIndex = Array.from(carouselItem.parentElement.children).indexOf(carouselItem);
+                
+                // Update only the indicators
+                $('.carousel-indicators').html('');
+                currentModels.forEach((_, index) => {
+                    const activeClass = index === currentSlideIndex ? 'active' : '';
+                    $('.carousel-indicators').append(`
+                        <button type="button" data-bs-target="#modelCarousel" data-bs-slide-to="${index}" 
+                                class="${activeClass}" aria-current="${activeClass ? 'true' : 'false'}"
+                                aria-label="Slide ${index + 1}"></button>
+                    `);
+                });
             } else {
                 alert('Failed to update status. Please try again.');
             }
@@ -203,9 +236,8 @@ function toggleSoldStatus(modelId) {
             alert('An error occurred. Please try again.');
         },
         complete: function() {
-            // Re-enable button and restore original text
+            // Re-enable button
             button.disabled = false;
-            button.innerHTML = originalText;
         }
     });
 }
@@ -233,9 +265,7 @@ function toggleModelStatus() {
                 }
             },
             complete: function() {
-                $('#toggleStatusBtn').prop('disabled', false).html(
-                    '<i class="fas fa-exchange-alt me-1"></i>Toggle Sold/Purchase'
-                );
+                $('#toggleStatusBtn').prop('disabled', false);
             }
         });
     }
