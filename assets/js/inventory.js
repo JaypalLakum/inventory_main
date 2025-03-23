@@ -1,0 +1,255 @@
+let currentModelId = null;
+let modelDetailsModal = null;
+let currentModels = [];
+let currentIndex = 0;
+let modelCarousel = null;
+
+function loadInventory() {
+    $.get('api/model.php', function(response) {
+        if (response.success) {
+            const models = response.models;
+            const modelGroups = {};
+            
+            // Group models by manufacturer and model name
+            models.forEach(model => {
+                const key = `${model.manufacturer_name}-${model.name}`;
+                if (!modelGroups[key]) {
+                    modelGroups[key] = {
+                        manufacturer_name: model.manufacturer_name,
+                        name: model.name,
+                        available_count: 0,
+                        models: []
+                    };
+                }
+                if (!model.is_sold) {
+                    modelGroups[key].available_count++;
+                }
+                modelGroups[key].models.push(model);
+            });
+
+            let html = '';
+            let serialNumber = 1;
+            Object.values(modelGroups).forEach(group => {
+                html += `
+                    <tr>
+                        <td>${serialNumber++}</td>
+                        <td>${group.manufacturer_name}</td>
+                        <td>${group.name}</td>
+                        <td><span class="badge bg-primary">${group.available_count}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="showModelDetails('${group.name}', '${group.manufacturer_name}')">
+                                <i class="fas fa-eye me-1"></i>View Details
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            $('#inventoryTableBody').html(html || '<tr><td colspan="5" class="text-center">No vehicles found</td></tr>');
+        }
+    });
+}
+
+function showModelDetails(modelName, manufacturerName) {
+    $.get('api/model.php', function(response) {
+        if (response.success) {
+            // Filter all instances of the selected model
+            currentModels = response.models.filter(m => 
+                m.name === modelName && 
+                m.manufacturer_name === manufacturerName
+            );
+            currentIndex = 0;
+            updateModal();
+            modelDetailsModal.show();
+        }
+    });
+}
+
+function updateModal() {
+    if (currentModels.length === 0) return;
+
+    let modelsHtml = '';
+    let indicatorsHtml = '';
+    
+    currentModels.forEach((model, index) => {
+        let activeClass = index === 0 ? 'active' : '';
+        
+        // Add carousel item
+        modelsHtml += `
+            <div class="carousel-item ${activeClass}">
+                <div class="vehicle-details-container">
+                    <!-- Left Column - Vehicle Information -->
+                    <div class="vehicle-info">
+                        <div class="info-header">
+                            <h4 class="mb-0">${model.manufacturer_name} ${model.name}</h4>
+                            <button class="btn btn-warning btn-sm btn-sold" onclick="toggleSoldStatus(${model.id})">
+                                <i class="fas fa-check-circle"></i> Mark as Sold
+                            </button>
+                        </div>
+                        
+                        <div class="info-section">
+                            <div class="info-group">
+                                <label>Color</label>
+                                <span>${model.color}</span>
+                            </div>
+                            <div class="info-group">
+                                <label>Manufacturing Year</label>
+                                <span>${model.manufacturing_year}</span>
+                            </div>
+                            <div class="info-group">
+                                <label>Registration Number</label>
+                                <span>${model.registration_number}</span>
+                            </div>
+                            <div class="info-group">
+                                <label>Status</label>
+                                <span class="status-badge ${model.is_sold ? 'sold' : 'available'}">
+                                    ${model.is_sold ? 'Sold' : 'Available'}
+                                </span>
+                            </div>
+                        </div>
+
+                        ${model.note ? `
+                            <div class="info-section">
+                                <label>Additional Notes</label>
+                                <p class="note-text">${model.note}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Right Column - Vehicle Images -->
+                    <div class="vehicle-images">
+                        <div class="image-container">
+                            ${model.image1 ? `
+                                <div class="main-image">
+                                    <img src="uploads/${model.image1}" class="img-fluid rounded" alt="Vehicle Image 1">
+                                </div>
+                            ` : ''}
+                            ${model.image2 ? `
+                                <div class="secondary-image">
+                                    <img src="uploads/${model.image2}" class="img-fluid rounded" alt="Vehicle Image 2">
+                                </div>
+                            ` : ''}
+                            ${!model.image1 && !model.image2 ? `
+                                <div class="no-image">
+                                    <i class="fas fa-car"></i>
+                                    <p>No images available</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add indicator
+        indicatorsHtml += `
+            <button type="button" data-bs-target="#modelCarousel" data-bs-slide-to="${index}" 
+                    class="${activeClass}" aria-current="${activeClass ? 'true' : 'false'}"
+                    aria-label="Slide ${index + 1}"></button>
+        `;
+    });
+
+    // Update carousel content
+    $('#carouselModelInner').html(modelsHtml);
+    $('.carousel-indicators').html(indicatorsHtml);
+
+    // Initialize or update carousel
+    if (!modelCarousel) {
+        modelCarousel = new bootstrap.Carousel(document.getElementById('modelCarousel'), {
+            interval: false,
+            wrap: false
+        });
+    } else {
+        modelCarousel.to(0);
+    }
+}
+
+function toggleSoldStatus(modelId) {
+    const button = event.currentTarget;
+    const currentStatus = button.closest('.carousel-item').querySelector('.status-badge').classList.contains('sold');
+    const newStatus = !currentStatus;
+    
+    // Disable button and show loading state
+    button.disabled = true;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
+
+    $.ajax({
+        url: 'api/model.php',
+        type: 'PUT',
+        data: {
+            id: modelId,
+            is_sold: newStatus ? 1 : 0
+        },
+        success: function(response) {
+            if (response.success) {
+                // Update the status badge
+                const statusBadge = button.closest('.carousel-item').querySelector('.status-badge');
+                statusBadge.className = `status-badge ${newStatus ? 'sold' : 'available'}`;
+                statusBadge.textContent = newStatus ? 'Sold' : 'Available';
+                
+                // Update button text
+                button.innerHTML = newStatus ? 
+                    '<i class="fas fa-undo me-1"></i>Mark as Available' : 
+                    '<i class="fas fa-check-circle me-1"></i>Mark as Sold';
+                
+                // Refresh the inventory table
+                loadInventory();
+            } else {
+                alert('Failed to update status. Please try again.');
+            }
+        },
+        error: function() {
+            alert('An error occurred. Please try again.');
+        },
+        complete: function() {
+            // Re-enable button and restore original text
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+    });
+}
+
+function toggleModelStatus() {
+    if(currentModelId) {
+        const currentStatus = $('#modalStatus').text();
+        const newStatus = currentStatus === 'Available' ? 1 : 0;
+            
+        $('#toggleStatusBtn').prop('disabled', true).html(
+            '<span class="spinner-border spinner-border-sm me-1"></span>Updating...'
+        );
+
+        $.ajax({
+            url: 'api/model.php',
+            type: 'PUT',
+            data: {
+                id: currentModelId,
+                is_sold: newStatus
+            },
+            success: function(response) {
+                if(response.success) {
+                    modelDetailsModal.hide();
+                    loadInventory();
+                }
+            },
+            complete: function() {
+                $('#toggleStatusBtn').prop('disabled', false).html(
+                    '<i class="fas fa-exchange-alt me-1"></i>Toggle Sold/Purchase'
+                );
+            }
+        });
+    }
+ }
+
+$(document).ready(function() {
+    
+    modelDetailsModal = new bootstrap.Modal(document.getElementById('modelDetailsModal')); 
+    loadInventory();
+
+    // Toggle status button handler
+    $('#toggleStatusBtn').click(toggleModelStatus);
+
+    // Set up polling for real-time updates
+    //setInterval(loadInventory, 5000);
+
+});
