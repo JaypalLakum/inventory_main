@@ -24,6 +24,10 @@ class Model {
     public function create(): bool|string
     {
         try {
+            
+            $this->image1 = $this->image1 ?? null;
+            $this->image2 = $this->image2 ?? null;
+
             $query = "INSERT INTO models (manufacturer_id,
                                           name, 
                                           color, 
@@ -41,16 +45,6 @@ class Model {
                               :image2)";
 
             $stmt = $this->conn->prepare($query);
-
-            // Sanitize inputs
-            $this->manufacturer_id = htmlspecialchars(strip_tags($this->manufacturer_id));
-            $this->name = htmlspecialchars(strip_tags($this->name));
-            $this->color = htmlspecialchars(strip_tags($this->color));
-            $this->manufacturing_year = htmlspecialchars(strip_tags($this->manufacturing_year));
-            $this->registration_number = htmlspecialchars(strip_tags($this->registration_number));
-            $this->note = htmlspecialchars(strip_tags($this->note));
-            $this->image1 = htmlspecialchars(strip_tags($this->image1));
-            $this->image2 = htmlspecialchars(strip_tags($this->image2));
 
             // Bind parameters
             $stmt->bindParam(":manufacturer_id", $this->manufacturer_id);
@@ -160,4 +154,3 @@ class Model {
         return $stmt;
     }
 }
-?> 
