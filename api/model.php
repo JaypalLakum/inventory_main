@@ -101,6 +101,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     }
 
+} elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+    // Get the raw DELETE data
+    $data = json_decode(file_get_contents("php://input"), true);
+    
+    if (!isset($data['id'])) {
+        $response['success'] = false;
+        $response['message'] = 'Model ID is required.';
+    } else {
+        try {
+            $model = new Model();
+            $model->id = intval($data['id']);
+            
+            if ($model->delete()) {
+                $response['success'] = true;
+                $response['message'] = 'Model deleted successfully.';
+            } else {
+                $response['success'] = false;
+                $response['message'] = 'Failed to delete model.';
+            }
+        } catch (Exception $e) {
+            $response['success'] = false;
+            $response['message'] = 'Error deleting model: ' . $e->getMessage();
+        }
+    }
 } else {
 
     $response['success'] = false;
