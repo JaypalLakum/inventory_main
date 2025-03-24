@@ -58,24 +58,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = $data['id'] ?? null;
 
     if ($id === null) {
-
         $response['success'] = false;
         $response['message'] = 'Manufacturer ID is required.';
-
     } else {
-
         $manufacturer = new Manufacturer();
         $manufacturer->id = $id;
 
-        if ($manufacturer->delete()) {
-
-            $response['success'] = true;
-            $response['message'] = 'Manufacturer deleted successfully.';
-
-        } else {
-
+        // Check if manufacturer has any models
+        if ($manufacturer->hasModels()) {
             $response['success'] = false;
-            $response['message'] = 'Failed to delete manufacturer.';
+            $response['message'] = 'Cannot delete manufacturer because it has existing models. Please delete or reassign the models first.';
+        } else {
+            if ($manufacturer->delete()) {
+                $response['success'] = true;
+                $response['message'] = 'Manufacturer deleted successfully.';
+            } else {
+                $response['success'] = false;
+                $response['message'] = 'Failed to delete manufacturer.';
+            }
         }
     }
 
