@@ -90,8 +90,16 @@ $(document).ready(function() {
 
     // Handle delete
     $(document).on('click', '.delete-manufacturer', function() {
-        if(confirm('Are you sure you want to delete this manufacturer?')) {
-            const manufacturerId = $(this).data('id');
+        const button = $(this);
+        const manufacturerId = button.data('id');
+        const manufacturerName = button.closest('tr').find('td:first').text();
+        
+        // Show confirmation dialog with manufacturer name
+        if(confirm(`Are you sure you want to delete the manufacturer "${manufacturerName}"?`)) {
+            // Disable the delete button and show loading state
+            button.prop('disabled', true)
+                  .html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
+            
             $.ajax({
                 url: 'api/manufacturer.php',
                 method: 'DELETE',
@@ -99,7 +107,43 @@ $(document).ready(function() {
                 data: JSON.stringify({ id: manufacturerId }),
                 success: function(response) {
                     if(response.success) {
+                        // Show success message
+                        $('#successAlert').text('Manufacturer deleted successfully.').show();
+                        $('#errorAlert').hide();
                         loadManufacturers();
+                    } else {
+                        // Show error message
+                        $('#errorAlert').text(response.message).show();
+                        $('#successAlert').hide();
+                        
+                        // Re-enable the delete button
+                        button.prop('disabled', false)
+                              .html('<i class="fas fa-trash"></i>');
+                    }
+                },
+                error: function(xhr) {
+                    // Handle network or server errors
+                    let errorMessage = 'An error occurred while deleting the manufacturer.';
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.message) {
+                            errorMessage = response.message;
+                        }
+                    } catch(e) {}
+                    
+                    $('#errorAlert').text(errorMessage).show();
+                    $('#successAlert').hide();
+                    
+                    // Re-enable the delete button
+                    button.prop('disabled', false)
+                          .html('<i class="fas fa-trash"></i>');
+                },
+                complete: function() {
+                    // Scroll to the top to ensure error/success message is visible
+                    if ($('#errorAlert').is(':visible') || $('#successAlert').is(':visible')) {
+                        $('html, body').animate({
+                            scrollTop: $('#alertContainer').offset().top - 20
+                        }, 200);
                     }
                 }
             });

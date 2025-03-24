@@ -90,4 +90,19 @@ class Manufacturer {
 
         return $stmt->rowCount() > 0;
     }
+
+    public function hasModels(): bool
+    {
+        $query = "SELECT COUNT(*) as count 
+                  FROM models 
+                  WHERE manufacturer_id = :id 
+                  AND is_deleted = 0";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":id", $this->id);
+        $stmt->execute();
+
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $result['count'] > 0;
+    }
 }

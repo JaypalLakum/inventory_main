@@ -19,7 +19,7 @@
                             <th>Manufacturer Name</th>
                             <th>Model Name</th>
                             <th>Available Count</th>
-                            <th>Actions</th>
+                            <th>Actions </th>
                         </tr>
                     </thead>
                     <tbody id="inventoryTableBody">

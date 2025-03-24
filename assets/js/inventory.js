@@ -12,6 +12,9 @@ function loadInventory() {
             
             // Group models by manufacturer and model name
             models.forEach(model => {
+                // Skip deleted models
+                if (model.is_deleted) return;
+                
                 const key = `${model.manufacturer_name}-${model.name}`;
                 if (!modelGroups[key]) {
                     modelGroups[key] = {
@@ -30,19 +33,22 @@ function loadInventory() {
             let html = '';
             let serialNumber = 1;
             Object.values(modelGroups).forEach(group => {
-                html += `
-                    <tr>
-                        <td>${serialNumber++}</td>
-                        <td>${group.manufacturer_name}</td>
-                        <td>${group.name}</td>
-                        <td><span class="badge bg-primary">${group.available_count}</span></td>
-                        <td>
-                            <button class="btn btn-sm btn-primary" onclick="showModelDetails('${group.name}', '${group.manufacturer_name}')">
-                                <i class="fas fa-eye me-1"></i>View Details
-                            </button>
-                        </td>
-                    </tr>
-                `;
+                // Only show groups that have non-deleted models
+                if (group.models.length > 0) {
+                    html += `
+                        <tr>
+                            <td>${serialNumber++}</td>
+                            <td>${group.manufacturer_name}</td>
+                            <td>${group.name}</td>
+                            <td><span class="badge bg-primary">${group.available_count}</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="showModelDetails('${group.name}', '${group.manufacturer_name}')">
+                                    <i class="fas fa-eye me-1"></i>View Details
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }
             });
 
             $('#inventoryTableBody').html(html || '<tr><td colspan="5" class="text-center">No vehicles found</td></tr>');
@@ -72,6 +78,8 @@ function updateModal() {
     let indicatorsHtml = '';
     
     currentModels.forEach((model, index) => {
+        if (model.is_deleted) return; // Skip deleted models
+        
         let activeClass = index === 0 ? 'active' : '';
         
         // Add carousel item
@@ -82,9 +90,15 @@ function updateModal() {
                     <div class="vehicle-info">
                         <div class="info-header">
                             <h4 class="mb-0">${model.manufacturer_name} ${model.name}</h4>
-                            <button class="btn btn-warning btn-sm btn-sold" onclick="toggleSoldStatus(${model.id})">
-                                <i class="fas fa-check-circle"></i> Mark as Sold
-                            </button>
+                            <div class="d-flex gap-2">
+                                <button class="btn ${model.is_sold ? 'btn-success' : 'btn-warning'} btn-sm" onclick="toggleSoldStatus(${model.id}, event)">
+                                    <i class="fas ${model.is_sold ? 'fa-undo' : 'fa-check-circle'} me-1"></i>
+                                    ${model.is_sold ? 'Purchase' : 'Sold'}
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteModel(${model.id}, event)">
+                                    <i class="fas fa-trash me-1"></i>Delete
+                                </button>
+                            </div>
                         </div>
                         
                         <div class="info-section">
@@ -164,15 +178,14 @@ function updateModal() {
     }
 }
 
-function toggleSoldStatus(modelId) {
+function toggleSoldStatus(modelId, event) {
     const button = event.currentTarget;
-    const currentStatus = button.closest('.carousel-item').querySelector('.status-badge').classList.contains('sold');
+    const carouselItem = button.closest('.carousel-item');
+    const currentStatus = carouselItem.querySelector('.status-badge').classList.contains('sold');
     const newStatus = !currentStatus;
     
     // Disable button and show loading state
     button.disabled = true;
-    const originalText = button.innerHTML;
-    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
 
     $.ajax({
         url: 'api/model.php',
@@ -183,18 +196,42 @@ function toggleSoldStatus(modelId) {
         },
         success: function(response) {
             if (response.success) {
+                // Update the model data in currentModels array
+                const modelIndex = currentModels.findIndex(m => m.id === modelId);
+                if (modelIndex !== -1) {
+                    currentModels[modelIndex].is_sold = newStatus;
+                }
+
                 // Update the status badge
-                const statusBadge = button.closest('.carousel-item').querySelector('.status-badge');
+                const statusBadge = carouselItem.querySelector('.status-badge');
                 statusBadge.className = `status-badge ${newStatus ? 'sold' : 'available'}`;
                 statusBadge.textContent = newStatus ? 'Sold' : 'Available';
                 
-                // Update button text
-                button.innerHTML = newStatus ? 
-                    '<i class="fas fa-undo me-1"></i>Mark as Available' : 
-                    '<i class="fas fa-check-circle me-1"></i>Mark as Sold';
+                // Update button text and class
+                button.className = `btn ${newStatus ? 'btn-success' : 'btn-warning'} btn-sm`;
+                button.innerHTML = `<i class="fas ${newStatus ? 'fa-undo' : 'fa-check-circle'} me-1"></i>${newStatus ? 'Purchase' : 'Sold'}`;
                 
-                // Refresh the inventory table
-                loadInventory();
+                // Update the available count in the inventory table
+                const modelName = carouselItem.querySelector('h4').textContent.split(' ').slice(1).join(' ');
+                const row = $(`#inventoryTableBody tr:contains('${modelName}')`);
+                const countBadge = row.find('.badge');
+                const currentCount = parseInt(countBadge.text());
+                countBadge.text(newStatus ? currentCount - 1 : currentCount + 1);
+
+                // Update the carousel display without re-rendering the current slide
+                const currentSlide = carouselItem;
+                const currentSlideIndex = Array.from(carouselItem.parentElement.children).indexOf(carouselItem);
+                
+                // Update only the indicators
+                $('.carousel-indicators').html('');
+                currentModels.forEach((_, index) => {
+                    const activeClass = index === currentSlideIndex ? 'active' : '';
+                    $('.carousel-indicators').append(`
+                        <button type="button" data-bs-target="#modelCarousel" data-bs-slide-to="${index}" 
+                                class="${activeClass}" aria-current="${activeClass ? 'true' : 'false'}"
+                                aria-label="Slide ${index + 1}"></button>
+                    `);
+                });
             } else {
                 alert('Failed to update status. Please try again.');
             }
@@ -203,9 +240,8 @@ function toggleSoldStatus(modelId) {
             alert('An error occurred. Please try again.');
         },
         complete: function() {
-            // Re-enable button and restore original text
+            // Re-enable button
             button.disabled = false;
-            button.innerHTML = originalText;
         }
     });
 }
@@ -233,13 +269,68 @@ function toggleModelStatus() {
                 }
             },
             complete: function() {
-                $('#toggleStatusBtn').prop('disabled', false).html(
-                    '<i class="fas fa-exchange-alt me-1"></i>Toggle Sold/Purchase'
-                );
+                $('#toggleStatusBtn').prop('disabled', false);
             }
         });
     }
  }
+
+// Add the delete model function
+function deleteModel(modelId, event) {
+    const button = event.currentTarget;
+    const carouselItem = button.closest('.carousel-item');
+    const modelName = carouselItem.querySelector('h4').textContent;
+
+    if (!confirm(`Are you sure you want to delete ${modelName}?`)) {
+        return;
+    }
+
+    $.ajax({
+        url: 'api/model.php',
+        type: 'DELETE',
+        contentType: 'application/json',
+        data: JSON.stringify({ id: modelId }),
+        success: function(response) {
+            if (response.success) {
+                // Find the model in currentModels array
+                const modelIndex = currentModels.findIndex(m => m.id === modelId);
+                if (modelIndex !== -1) {
+                    const model = currentModels[modelIndex];
+                    model.is_deleted = true;
+
+                    // If the model was available (not sold), decrease the available count
+                    if (!model.is_sold) {
+                        const modelName = model.name;
+                        const row = $(`#inventoryTableBody tr:contains('${modelName}')`);
+                        const countBadge = row.find('.badge');
+                        const currentCount = parseInt(countBadge.text());
+                        if (currentCount > 0) {
+                            countBadge.text(currentCount - 1);
+                        }
+                        
+                        // If count becomes 0, remove the entire row
+                        if (currentCount - 1 === 0) {
+                            row.remove();
+                        }
+                    }
+                }
+
+                // Remove the deleted model from the carousel
+                currentModels = currentModels.filter(m => !m.is_deleted);
+                if (currentModels.length === 0) {
+                    // If no models left, close the modal
+                    modelDetailsModal.hide();
+                } else {
+                    // Update the carousel
+                    updateModal();
+                }
+
+                // Refresh the inventory table
+                loadInventory();
+            }
+        }
+    });
+}
 
 $(document).ready(function() {
     
